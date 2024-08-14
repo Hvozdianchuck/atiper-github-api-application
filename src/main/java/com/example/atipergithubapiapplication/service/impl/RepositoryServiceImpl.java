@@ -14,6 +14,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Service
@@ -30,10 +31,14 @@ public class RepositoryServiceImpl implements RepositoryService {
         try {
             ResponseEntity<RepositoryInfo[]> repositoriesResponce =
                     restTemplate.getForEntity(url, RepositoryInfo[].class);
-            return Arrays.stream(repositoriesResponce.getBody())
-                    .filter(rep -> !rep.isFork())
-                    .map(this::populateBranches)
-                    .collect(Collectors.toList());
+            List<CompletableFuture<RepositoryInfo>> completableFutureReps =
+                    Arrays.stream(repositoriesResponce.getBody())
+                            .filter(rep -> !rep.isFork())
+                            .map(rep -> CompletableFuture.supplyAsync(() -> populateBranches(rep)))
+                            .toList();
+            return completableFutureReps.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
                 throw new UserNotFoundException("User " + username + " not found");
@@ -55,5 +60,4 @@ public class RepositoryServiceImpl implements RepositoryService {
         ResponseEntity<BranchInfo[]> response = restTemplate.getForEntity(url, BranchInfo[].class);
         return Arrays.asList(response.getBody());
     }
-
 }
